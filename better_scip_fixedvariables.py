@@ -45,8 +45,8 @@ def loadPolicy(modelpath):
     return policy
 
 def PredictAndKill(policy, queue, instance_dir, solution_dir, log_dir, ScipTrustregionOptions):
-    while(True):
-        while queue.qsize():
+    while queue.qsize():
+        while True:
             # Get the problem to solve3
             name = queue.get()
             # Get bipartite graph from the problem
@@ -158,10 +158,10 @@ def PredictAndKill(policy, queue, instance_dir, solution_dir, log_dir, ScipTrust
                 
                 break
 
-    # Optimize the problem and write the best soluton
-    m.optimize()
-    m.writeBestSol(f"{solution_dir}/{name}.sol")
-    print(f"[{get_native_id()}] scip_fixedvariables: {name} k0={count_0} k1={count_1} ({queue.qsize()} left)")
+        # Optimize the problem and write the best soluton
+        m.optimize()
+        m.writeBestSol(f"{solution_dir}/{name}.sol")
+        print(f"[{get_native_id()}] scip_fixedvariables: {name} k0={count_0} k1={count_1} ({queue.qsize()} left)")
 
 def _main(ScriptOptions):
     """
