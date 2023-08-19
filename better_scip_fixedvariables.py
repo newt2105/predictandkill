@@ -45,8 +45,7 @@ def loadPolicy(modelpath):
     return policy
 
 def PredictAndKill(policy, queue, instance_dir, solution_dir, log_dir, ScipTrustregionOptions):
-    while queue.qsize():
-        while True:
+        while queue.qsize():
             # Get the problem to solve3
             name = queue.get()
             # Get bipartite graph from the problem
@@ -118,46 +117,55 @@ def PredictAndKill(policy, queue, instance_dir, solution_dir, log_dir, ScipTrust
                     m.fixVar(target_variable, 1)
                 if x_star == 0:
                     m.fixVar(target_variable, 0)
-            #COUNT UNFIXED VAR
-            def count_unfixed_variables(policy, queue, instance_dir, ScipTrustregionOptions):
-                unfixed_count = 0
 
-                while queue.qsize():
-                    # Get the problem to solve
-                    name = queue.get()
-                    # Get bipartite graph from the problem
-                    instancefile = f"{instance_dir}/{name}"
-                    A, v_map, v_nodes, _, _ = get_bg_data(instancefile)
-                    constraints_features = v_nodes.cpu()
-                    constraints_features[np.isnan(constraints_features)] = 1
-                    variables_features = v_nodes
-                    variables_features = position_get(variables_features)
-                    edge_indices = A._indices()
-                    edge_features = torch.ones(edge_indices.shape)
-                    # Prediction
-                    prediction_result = policy(
-                        constraints_features.to(DEVICE),
-                        edge_indices.to(DEVICE),
-                        edge_features.to(DEVICE),
-                        variables_features.to(DEVICE),
-                    ).sigmoid().cpu().squeeze()
 
-                    scores = []
-                    for i, varname in enumerate(v_map):
-                        scores.append([i, varname, prediction_result[i].item()])
-                    scores.sort(key=lambda x: x[2], reverse=False)
-                    
-                    scores = scores[:ScipTrustregionOptions.MaxFixed0VarCount + ScipTrustregionOptions.MaxFixed1VarCount]
-                    
-                    unfixed_count += sum(1 for score in scores if score[2] < 0)
+        # Count the number of unfixed variables
+        def find_unfixed_variables(scores, m_v_map):
+            unfixed_variables = []
 
-                return unfixed_count
-            
-            unfixed_var_count = count_unfixed_variables(policy, queue, instance_dir, ScipTrustregionOptions)
-            if (unfixed_var_count <= 0):
+            for i in range(len(scores)):
+                target_variable = m_v_map[scores[i][1]]
+                x_star = scores[i][3]
+
+                if x_star < 0:
+                    continue
+                if x_star != 0 and x_star != 1:
+                    unfixed_variables.append(target_variable)
+
+                return unfixed_variables
+
+
+        unfixed_vars = find_unfixed_variables(scores, m_v_map)
+        for var in unfixed_vars:
+            x_star = var[3]
+            target_variable = m_v_map[var[1]]  # Lấy biến để làm việc dựa trên kết quả dự đoán
+            if x_star >= 0:  # Kiểm tra x_star để bỏ qua các biến không cần predict lại
+             # Thực hiện predict lại
+                constraints_features = c_nodes.cpu()
+                constraints_features[np.isnan(constraints_features)] = 1
+                variables_features = v_nodes
+                variables_features = position_get(variables_features)
+                edge_indices = A._indices()
+                edge_features = A._values().unsqueeze(1)
+                edge_features = torch.ones(edge_features.shape)
+                prediction_result = policy(
+                    constraints_features.to(DEVICE),
+                    edge_indices.to(DEVICE),
+                    edge_features.to(DEVICE),
+                    variables_features.to(DEVICE),
+                ).sigmoid().cpu().squeeze()
+
+                # Cập nhật kết quả predict lại
+                scores[var[0]][2] = prediction_result[var[0]].item()
+
+                # Sắp xếp lại danh sách prediction dựa trên kết quả predict mới
+                scores.sort(key=lambda x: x[2], reverse=False)
                 
-                break
-
+                # Fix giá trị biến dựa trên kết quả predict mới
+                if x_star == 1:
+                    m.fixVar(target_variable, 1)
+                elif x_star == 0:
+                    m.fixVar(target_variable, 0)
         # Optimize the problem and write the best soluton
         m.optimize()
         m.writeBestSol(f"{solution_dir}/{name}.sol")
